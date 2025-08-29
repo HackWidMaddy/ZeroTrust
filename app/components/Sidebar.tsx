@@ -27,7 +27,7 @@ export default function Sidebar({ user, currentPage, onLogout }: SidebarProps) {
     { id: 'mesh', label: 'Mesh Visualizer', icon: '🌐', path: '/mesh' },
     { id: 'aiassistant', label: 'AI Assistant', icon: '🤖', path: '/aiassistant' },
     { id: 'audit', label: 'Audit & Logs', icon: '📋', path: '/audit' },
-    { id: 'settings', label: 'Settings', icon: '⚙️', path: '/settings' },
+    { id: 'config', label: 'Configuration', icon: '⚙️', path: '/config' },
     { id: 'help', label: 'Help / Docs', icon: '❓', path: '/help' }
   ];
 
