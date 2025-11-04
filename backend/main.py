@@ -8,6 +8,7 @@ import requests
 import base64
 import json
 import datetime
+import threading
 
 app = Flask(__name__)
 CORS(app, origins="*")  # Allow all origins
@@ -26,6 +27,147 @@ def clean_doc(doc):
     if isinstance(doc, ObjectId):
         return str(doc)
     return doc
+
+# -----------------------------
+# Federated Learning (in-memory)
+# -----------------------------
+
+fl_lock = threading.Lock()
+fl_state = {
+    "active": False,
+    "round_id": None,
+    "created_at": None,
+    "config": {
+        "vector_size": 100,
+        "min_clients": 1,
+    },
+    "global_weights": [],  # list[float]
+    "updates": [],          # list[{client_id, num_samples, weights}]
+}
+
+def _zeros(n):
+    return [0.0 for _ in range(n)]
+
+def _fedavg(updates, vector_size):
+    if not updates:
+        return None
+    total_samples = sum(u.get("num_samples", 1) for u in updates)
+    if total_samples == 0:
+        total_samples = 1
+    agg = _zeros(vector_size)
+    for u in updates:
+        w = u.get("weights", [])
+        ns = u.get("num_samples", 1)
+        if len(w) != vector_size:
+            continue
+        for i in range(vector_size):
+            agg[i] += (w[i] * ns)
+    for i in range(vector_size):
+        agg[i] /= float(total_samples)
+    return agg
+
+@app.route("/fl/start-round", methods=["POST"])
+def fl_start_round():
+    try:
+        data = request.get_json(silent=True) or {}
+        vector_size = int(data.get("vector_size", 100))
+        min_clients = int(data.get("min_clients", 1))
+        round_id = str(uuid.uuid4())
+
+        with fl_lock:
+            fl_state["active"] = True
+            fl_state["round_id"] = round_id
+            fl_state["created_at"] = datetime.datetime.now().isoformat()
+            fl_state["config"] = {"vector_size": vector_size, "min_clients": min_clients}
+            fl_state["global_weights"] = _zeros(vector_size)
+            fl_state["updates"] = []
+
+        return jsonify({
+            "status": "success",
+            "round_id": round_id,
+            "config": fl_state["config"],
+            "global_weights": fl_state["global_weights"],
+        })
+    except Exception as e:
+        print(f"Error in fl_start_round: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/fl/config", methods=["GET"])
+def fl_get_config():
+    try:
+        with fl_lock:
+            if not fl_state["active"] or not fl_state["round_id"]:
+                return jsonify({"status": "error", "message": "No active round"}), 400
+            return jsonify({
+                "status": "success",
+                "round_id": fl_state["round_id"],
+                "config": fl_state["config"],
+                "global_weights": fl_state["global_weights"],
+            })
+    except Exception as e:
+        print(f"Error in fl_get_config: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/fl/submit-update", methods=["POST"])
+def fl_submit_update():
+    try:
+        data = request.get_json()
+        client_id = data.get("client_id")
+        weights = data.get("weights")
+        num_samples = int(data.get("num_samples", 1))
+
+        if client_id is None or weights is None:
+            return jsonify({"status": "error", "message": "client_id and weights are required"}), 400
+
+        with fl_lock:
+            if not fl_state["active"] or not fl_state["round_id"]:
+                return jsonify({"status": "error", "message": "No active round"}), 400
+
+            vector_size = fl_state["config"].get("vector_size", 100)
+            if len(weights) != vector_size:
+                return jsonify({"status": "error", "message": f"weights must be length {vector_size}"}), 400
+
+            fl_state["updates"].append({
+                "client_id": client_id,
+                "weights": weights,
+                "num_samples": num_samples,
+                "received_at": datetime.datetime.now().isoformat(),
+            })
+
+            # If we have min_clients, aggregate now; otherwise aggregate on each submit
+            min_clients = fl_state["config"].get("min_clients", 1)
+            if len(fl_state["updates"]) >= max(1, min_clients):
+                new_weights = _fedavg(fl_state["updates"], vector_size)
+                if new_weights is not None:
+                    fl_state["global_weights"] = new_weights
+                    fl_state["updates"] = []
+
+            return jsonify({
+                "status": "success",
+                "round_id": fl_state["round_id"],
+                "global_weights": fl_state["global_weights"],
+                "pending_updates": len(fl_state["updates"]),
+            })
+    except Exception as e:
+        print(f"Error in fl_submit_update: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/fl/status", methods=["GET"])
+def fl_status():
+    try:
+        with fl_lock:
+            return jsonify({
+                "status": "success",
+                "active": fl_state["active"],
+                "round_id": fl_state["round_id"],
+                "created_at": fl_state["created_at"],
+                "config": fl_state["config"],
+                "global_weights": fl_state["global_weights"],
+                "received_updates": len(fl_state["updates"]),
+            })
+    except Exception as e:
+        print(f"Error in fl_status: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/configinput", methods=["POST"])
 def config_input():

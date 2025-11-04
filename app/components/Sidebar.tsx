@@ -26,6 +26,7 @@ export default function Sidebar({ user, currentPage, onLogout }: SidebarProps) {
     { id: 'exfil', label: 'Exfil Ops', icon: '📤', path: '/exfil' },
     { id: 'mesh', label: 'Mesh Visualizer', icon: '🌐', path: '/mesh' },
     { id: 'aiassistant', label: 'AI Assistant', icon: '🤖', path: '/aiassistant' },
+    { id: 'federated', label: 'Federated Learning', icon: '🧠', path: '/federated' },
     { id: 'audit', label: 'Audit & Logs', icon: '📋', path: '/audit' },
     { id: 'config', label: 'Configuration', icon: '⚙️', path: '/config' },
     { id: 'help', label: 'Help / Docs', icon: '❓', path: '/help' }
