@@ -1,8 +1,8 @@
-# ZeroTrust: Advanced Red Team C2 Framework Analysis
+# ZeroTrust: Advanced Red Team C2 Framework
 
 ## 📋 Executive Summary
 
-**ZeroTrust** is a sophisticated command-and-control (C2) framework engineered for educational red teaming simulations and advanced persistent threat (APT) research. The platform combines **covert channel communication**, **federated learning-based command delivery**, and **Living-off-the-Land Binaries (LOLBINs)** to demonstrate advanced threat methodologies while maintaining educational integrity and security research compliance.
+**ZeroTrust** (UI name: **ZeroTrace**) is a sophisticated command-and-control (C2) framework engineered for educational red teaming simulations and advanced persistent threat (APT) research. The platform combines **covert channel communication**, **federated learning-based command delivery**, and **Living-off-the-Land Binaries (LOLBINs)** to demonstrate advanced threat methodologies while maintaining educational integrity and security research compliance.
 
 ---
 
@@ -88,12 +88,13 @@ Result: Network reconnaissance data returned to dashboard
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **C2 Dashboard** | Next.js 15.4.6, React 19, TypeScript | Web-based command interface & bot management |
-| **Coordinator Backend** | Python, Node.js | Federated learning round management |
-| **Bot Agent** | PowerShell, WMI | Command execution on compromised systems |
+| **C2 Dashboard** | Next.js 15.4.9, React 19.1.0, TypeScript | Web-based command interface & bot management |
+| **Coordinator Backend** | Python 3.8+, Flask 3.0.0, MongoDB | Federated learning round management & bot registry |
+| **Bot Agent** | PowerShell, WMI | Command execution on target systems |
 | **Encryption** | CryptoJS 4.2.0 | AES encryption for command payloads |
 | **AI Integration** | Groq API (GPT-OSS-120B) | Natural language to command translation |
 | **UI Framework** | Tailwind CSS 4 | Modern responsive dashboard design |
+| **Database** | MongoDB (via pymongo 4.6.3) | Bot registry & command/result storage |
 
 ### Communication Architecture
 
@@ -134,6 +135,55 @@ Result: Network reconnaissance data returned to dashboard
     │(PowerShell)    │ N        │
     └──────────┘     └──────────┘
 ```
+
+### Project Structure
+
+```
+ZeroTrust/
+├── app/                          # Next.js frontend (App Router)
+│   ├── page.tsx                  # Login page (matrix rain UI)
+│   ├── layout.tsx                # Root layout
+│   ├── globals.css               # Global styles
+│   ├── dashboard/                # Command Centre overview
+│   ├── agentfactory/             # Agent builder (platform, capabilities, transport)
+│   ├── agentsandfleet/           # Bot registry & management
+│   ├── shell/[uuid]/             # Interactive shell per bot
+│   ├── exfil/                    # Exfiltration operations
+│   ├── federated/                # Federated learning C2 control
+│   ├── aiassistant/              # Groq-powered NL command assistant
+│   ├── config/                   # GitHub, Groq, MongoDB configuration
+│   ├── components/               # Shared UI components (Sidebar, Header, etc.)
+│   ├── api/
+│   │   ├── groq/route.ts         # Groq API proxy (NL → PowerShell)
+│   │   └── ai/route.ts           # AI command execution API
+│   └── utils/                    # Auth helpers, MD5, etc.
+├── backend/
+│   ├── main.py                   # Flask server (bot registry, FL coordinator)
+│   ├── train_step.py             # Local federated learning training step
+│   └── requirements.txt          # Python dependencies
+├── federated_learning_agent.ps1  # PowerShell bot agent
+├── middleware.ts                  # Next.js auth middleware
+├── next.config.ts
+├── package.json
+└── tsconfig.json
+```
+
+### Dashboard Modules
+
+| Module | Path | Description |
+|--------|------|-------------|
+| **Overview** | `/dashboard` | Active agents, C2 channels, threat level stats |
+| **Agent Factory** | `/agentfactory` | Build agents with custom capabilities & transport channels |
+| **Agents & Fleet** | `/agentsandfleet` | Manage all registered bots (grid/table view, screenshot) |
+| **Channels & Routing** | `/channels` | Configure C2 transport channels |
+| **Payload Builder** | `/payload` | Build and configure payloads |
+| **Stego Lab** | `/stego` | Steganography-based covert communication |
+| **Exfil Ops** | `/exfil` | Data exfiltration operation management |
+| **Mesh Visualizer** | `/mesh` | Network topology visualization |
+| **AI Assistant** | `/aiassistant` | Groq-powered natural language → PowerShell assistant |
+| **Federated Learning** | `/federated` | Start/stop FL rounds, monitor weight distribution |
+| **Audit & Logs** | `/audit` | Operation audit trail and logging |
+| **Configuration** | `/config` | GitHub PAT, Groq API key, MongoDB connection |
 
 ### Bot Agent Lifecycle
 
@@ -321,23 +371,37 @@ Result: Persistence mechanisms identified
 - **Groq API key** (for AI command generation)
 - **Administrator privileges** (for sensitive operations)
 
-### Dashboard Setup
+### Dashboard Setup (Next.js Frontend)
 ```bash
 npm install
 echo "GROQ_API_KEY=your_groq_api_key_here" > .env.local
-npm run dev           # Development server
+npm run dev           # Development server (http://localhost:3000)
 npm run build         # Production build
 npm start             # Production deployment
 ```
 
-### Bot Deployment
+### Backend Setup (Flask Coordinator)
+```bash
+cd backend
+pip install -r requirements.txt
+python main.py        # Starts Flask server on http://localhost:5000
+```
+
+> **Note:** MongoDB must be running and accessible before starting the backend.
+
+### Bot Deployment (PowerShell Agent)
 ```powershell
 .\federated_learning_agent.ps1 `
   -CoordinatorUrl "http://your-c2-server:5000" `
   -ClientId "bot-001" `
   -MaxRounds 10000 `
-  -SleepSeconds 5
+  -SleepSeconds 5 `
+  -VectorSize 100 `
+  -Lr 0.05
 ```
+
+### AI Assistant Setup
+See [AI_ASSISTANT_SETUP.md](./AI_ASSISTANT_SETUP.md) for detailed Groq API configuration and example queries.
 
 ---
 
@@ -382,4 +446,4 @@ ZeroTrust represents a **next-generation C2 framework** combining cutting-edge t
 
 The anti-prevention mechanisms demonstrate the **adversarial arms race** between offense and defense, providing valuable insights for both attackers seeking to understand evasion techniques and defenders seeking to detect and mitigate advanced threats.
 
-**Status**: Educational Framework | **Version**: 0.1.0 | **Author**: HackWidMaddy | **Last Updated**: November 2025
+**Status**: Educational Framework | **Version**: 0.1.0 | **Author**: HackWidMaddy | **Last Updated**: March 2026
